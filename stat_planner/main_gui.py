@@ -40,13 +40,16 @@ class StatPlannerGUI(QWidget):
         self.last_action = None
         self.prev_stats  = None
 
+        # --- Stat priorities ---
+        self.stat_priorities = {s: 'Normal' for s in STATS}
+        self.priority_dropdowns = {}
+
         # --- Load assets & profiles ---
         self.stat_icons = load_stat_icons()
         self.profiles = load_profiles()
 
         # --- Build UI ---
-        main = QVBoxLayout()
-        self.main_layout = main  # For graph_ui.py to access
+        self.main_layout = QVBoxLayout()
 
         # --- Profile selector + Add button ---
         profile_layout = QHBoxLayout()
@@ -62,7 +65,7 @@ class StatPlannerGUI(QWidget):
         self.add_profile_btn = QPushButton("Add Trainee…")
         self.add_profile_btn.clicked.connect(lambda: show_add_profile_dialog(self))
         profile_layout.addWidget(self.add_profile_btn)
-        main.addLayout(profile_layout)
+        self.main_layout.addLayout(profile_layout)
 
         # --- Ideal stat inputs ---
         ideal_layout = QHBoxLayout()
@@ -81,27 +84,43 @@ class StatPlannerGUI(QWidget):
             v.addWidget(le)
             ideal_layout.addLayout(v)
             self.ideal_inputs[stat] = le
-        main.addLayout(ideal_layout)
+        self.main_layout.addLayout(ideal_layout)
+
+        # --- Stat Priority Controls ---
+        priority_layout = QHBoxLayout()
+        priority_layout.addWidget(QLabel("Stat Priorities:"))
+        priority_options = ["Lowest", "Low", "Normal", "High", "Highest"]
+        for stat in STATS:
+            v = QVBoxLayout()
+            v.addWidget(QLabel(stat.capitalize()))
+            cb = QComboBox()
+            cb.addItems(priority_options)
+            cb.setCurrentText("Normal")
+            cb.currentTextChanged.connect(lambda val, s=stat: self.set_stat_priority(s, val))
+            v.addWidget(cb)
+            priority_layout.addLayout(v)
+            self.priority_dropdowns[stat] = cb
+        self.main_layout.addLayout(priority_layout)
 
         # --- Rounds & turns ---
         rr = QHBoxLayout()
-        rr.addWidget(QLabel("Races before Quarter-Finals:"))
+        rr.addWidget(QLabel("Preliminary Races (before Quarter-Finals):"))
         self.total_rounds_input = QLineEdit()
         self.total_rounds_input.setFixedWidth(60)
         self.total_rounds_input.setValidator(QIntValidator(1, 99))
         rr.addWidget(self.total_rounds_input)
-        main.addLayout(rr)
+        self.main_layout.addLayout(rr)
 
         tr = QHBoxLayout()
-        tr.addWidget(QLabel("Turns until first race:"))
+        tr.addWidget(QLabel("Turns until next race:"))
         self.turns_total_input = QLineEdit()
         self.turns_total_input.setFixedWidth(60)
         self.turns_total_input.setValidator(QIntValidator(1, 99))
         tr.addWidget(self.turns_total_input)
-        main.addLayout(tr)
+        self.main_layout.addLayout(tr)
 
         # --- Detected stats ---
-        main.addWidget(QLabel("Detected Stats (edit if needed):"))
+        self.main_layout.addWidget(QLabel("Detected Stats (edit if needed):"))
         det = QHBoxLayout()
         self.detected_inputs = {}
         for stat in STATS:
@@ -116,7 +135,7 @@ class StatPlannerGUI(QWidget):
             v.addWidget(le)
             det.addLayout(v)
             self.detected_inputs[stat] = le
-        main.addLayout(det)
+        self.main_layout.addLayout(det)
 
         # --- Buttons: Scan & Confirm ---
         btns = QHBoxLayout()
@@ -127,7 +146,7 @@ class StatPlannerGUI(QWidget):
         self.confirm_btn.setEnabled(False)
         btns.addWidget(self.scan_btn)
         btns.addWidget(self.confirm_btn)
-        main.addLayout(btns)
+        self.main_layout.addLayout(btns)
 
         # --- Train/Recover ---
         ar = QHBoxLayout()
@@ -143,7 +162,7 @@ class StatPlannerGUI(QWidget):
         ar.addWidget(self.train_btn)
         ar.addWidget(self.recover_btn)
         ar.addWidget(self.race_btn)
-        main.addLayout(ar)
+        self.main_layout.addLayout(ar)
 
         # --- Graphs ---
         setup_graphs(self)
@@ -170,21 +189,26 @@ class StatPlannerGUI(QWidget):
         self.load_state_btn.setEnabled(STATE_FILE.exists())
         sv.addWidget(self.load_state_btn)
 
-        main.addLayout(sv)
+        self.main_layout.addLayout(sv)
 
         # --- Debug toggle ---
         dbg = QHBoxLayout()
         self.debug_toggle = QCheckBox("Show Debug Image After Scan")
         dbg.addWidget(self.debug_toggle)
-        main.addLayout(dbg)
+        self.main_layout.addLayout(dbg)
 
         # --- Status log ---
         self.status_output = QTextEdit()
         self.status_output.setReadOnly(True)
         self.status_output.setFixedHeight(150)
-        main.addWidget(self.status_output)
+        self.main_layout.addWidget(self.status_output)
 
-        self.setLayout(main)
+        self.setLayout(self.main_layout)
+
+    def set_stat_priority(self, stat, value):
+        self.stat_priorities[stat] = value
+        # Optionally, log or trigger UI update if needed
+        self.log(f"Priority for {stat.capitalize()} set to {value}.")
 
     # --- Profile Handlers moved to profile_ui.py ---
 
@@ -197,7 +221,11 @@ class StatPlannerGUI(QWidget):
             self.total_rounds = int(self.total_rounds_input.text())
             self.turns_left  = int(self.turns_total_input.text())
             self.turn = 1; self.rounds_done = 0; self.feedback_stat = None; self.history.clear()
+            # Make rounds/turns fields read-only after run starts
+            self.total_rounds_input.setReadOnly(True)
+            self.turns_total_input.setReadOnly(True)
             self.log("✅ Run initialized.")
+            self.update_rounds_turns_fields()
             return True
         except Exception as e:
             QMessageBox.warning(self, "Input Error", "Enter valid integers.")
@@ -206,7 +234,13 @@ class StatPlannerGUI(QWidget):
     # --- Scan/Confirm Handlers moved to scan_ui.py ---
 
     def train_action(self):
-        choice, reason = suggest_training(self.current_stats, self.ideal_stats, self.turns_left, self.feedback_stat)
+        choice, reason = suggest_training(
+            self.current_stats,
+            self.ideal_stats,
+            self.turns_left,
+            self.feedback_stat,
+            priorities=self.stat_priorities
+        )
         self.last_action = choice
         self.log(f"📌 Train {choice.capitalize()} — {reason}")
         self.advance_turn()
@@ -255,10 +289,12 @@ class StatPlannerGUI(QWidget):
                 return
 
         # after handling feedback, treat it like a turn—do NOT decrement turns_left!
+        self.turn += 1
         self.prepare_next_turn()
 
     def advance_turn(self):
         self.turns_left -= 1
+        self.update_rounds_turns_fields()
         if self.turns_left < 1:
             self.handle_race_stage()
         else:
@@ -272,6 +308,7 @@ class StatPlannerGUI(QWidget):
             fb, ok = QInputDialog.getText(self, "Feedback", "Focus stat (leave blank):")
             self.feedback_stat = fb.lower() if ok and fb.lower() in STATS else None
             self.rounds_done += 1
+            self.update_rounds_turns_fields()
             next_stage = race_stage(self.rounds_done, self.total_rounds)
             if next_stage == "End":
                 QMessageBox.information(self, "Done", "🏆 Final complete!")
@@ -287,7 +324,7 @@ class StatPlannerGUI(QWidget):
             QMessageBox.information(self, "Next", f"Next: {next_stage}")
             turns, ok = QInputDialog.getInt(self, "Next Turns", "Turns until next race:", min=1)
             if ok:
-                self.turns_left = turns; self.turn = 1; self.prepare_next_turn()
+                self.turns_left = turns; self.turn = 1; self.update_rounds_turns_fields(); self.prepare_next_turn()
         else:
             QMessageBox.information(self, "Run Over", "❌ Run ended.")
             # Remove the saved state file if it exists
@@ -304,13 +341,29 @@ class StatPlannerGUI(QWidget):
         self.train_btn.setEnabled(False); self.recover_btn.setEnabled(False); self.race_btn.setEnabled(False); self.confirm_btn.setEnabled(False)
         for s in STATS:
             self.detected_inputs[s].clear(); self.detected_inputs[s].setEnabled(False)
+        self.update_rounds_turns_fields()
         # combined message:
         self.log(f"🔄 Ready for turn {self.turn}  •  {self.turns_left} turns left until next race")
+
+    def update_rounds_turns_fields(self):
+        # Always reflect the current state in the fields
+        self.total_rounds_input.setText(str(self.total_rounds))
+        self.turns_total_input.setText(str(self.turns_left))
+        # Make them read-only after run starts
+        self.total_rounds_input.setReadOnly(True)
+        self.turns_total_input.setReadOnly(True)
+
+    def reset_rounds_turns_fields(self):
+        # Allow editing again (e.g. after run ends or on new run)
+        self.total_rounds_input.setReadOnly(False)
+        self.turns_total_input.setReadOnly(False)
 
     def offer_post_run_save(self):
         resp = QMessageBox.question(self, "Save?", "Save graph & CSV?")
         if resp == QMessageBox.StandardButton.Yes:
             self.save_graph(); self.save_stats_csv(); self.export_to_ppt()
+        # Allow editing rounds/turns for next run
+        self.reset_rounds_turns_fields()
         self.close()
 
     def update_graph(self):

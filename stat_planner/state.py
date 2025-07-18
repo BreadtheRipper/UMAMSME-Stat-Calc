@@ -16,6 +16,7 @@ def save_state(state: dict):
       - rounds_done (int)
       - turns_left (int)
       - turn (int)
+      - stat_priorities (dict, optional)
     """
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=2)

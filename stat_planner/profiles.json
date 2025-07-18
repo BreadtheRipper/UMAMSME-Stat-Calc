@@ -87,43 +87,43 @@
           }
         },
         "stamina": {
-          "count": 5,
+          "count": 12,
           "gains": {
-            "speed": 16,
-            "stamina": 124,
-            "power": 11,
-            "guts": 40,
-            "wit": 3
+            "speed": 21,
+            "stamina": 242,
+            "power": 14,
+            "guts": 80,
+            "wit": 6
           }
         },
         "power": {
-          "count": 6,
+          "count": 10,
           "gains": {
-            "speed": 5,
-            "stamina": 39,
-            "power": 75,
-            "guts": 0,
-            "wit": 0
+            "speed": 40,
+            "stamina": 67,
+            "power": 122,
+            "guts": 4,
+            "wit": 11
           }
         },
         "guts": {
-          "count": 6,
+          "count": 11,
           "gains": {
-            "speed": 36,
-            "stamina": 0,
-            "power": 40,
-            "guts": 71,
-            "wit": 0
+            "speed": 74,
+            "stamina": 2,
+            "power": 79,
+            "guts": 130,
+            "wit": 2
           }
         },
         "wit": {
-          "count": 12,
+          "count": 18,
           "gains": {
-            "speed": 73,
+            "speed": 103,
             "stamina": 19,
-            "power": 17,
+            "power": 27,
             "guts": 19,
-            "wit": 177
+            "wit": 269
           }
         }
       }

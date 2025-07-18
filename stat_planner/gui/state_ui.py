@@ -3,6 +3,14 @@ from stat_planner.state import save_state, load_state, STATE_FILE
 from stat_planner.settings import STATS
 
 def on_save_state(gui):
+    # Always save the current dropdown values for stat priorities
+    stat_priorities = {}
+    if hasattr(gui, 'priority_dropdowns'):
+        for s, cb in gui.priority_dropdowns.items():
+            stat_priorities[s] = cb.currentText()
+    else:
+        stat_priorities = gui.stat_priorities.copy() if hasattr(gui, 'stat_priorities') else None
+
     state = {
         "profile_index": gui.profile_select.currentIndex(),
         "ideal_stats":   gui.ideal_stats,
@@ -12,7 +20,8 @@ def on_save_state(gui):
         "total_rounds":  gui.total_rounds,
         "rounds_done":   gui.rounds_done,
         "turns_left":    gui.turns_left,
-        "turn":          gui.turn
+        "turn":          gui.turn,
+        "stat_priorities": stat_priorities
     }
     try:
         save_state(state)
@@ -28,6 +37,15 @@ def on_load_state(gui):
     if not data:
         QMessageBox.information(gui, "No State", "No saved run state found.")
         return
+
+    # Restore stat priorities if present
+    stat_priorities = data.get("stat_priorities")
+    if stat_priorities:
+        gui.stat_priorities = stat_priorities.copy()
+        # Update dropdowns to match loaded priorities
+        for s, val in stat_priorities.items():
+            if s in gui.priority_dropdowns:
+                gui.priority_dropdowns[s].setCurrentText(val)
 
     # Restore profile & UI
     idx = data.get("profile_index", 0)

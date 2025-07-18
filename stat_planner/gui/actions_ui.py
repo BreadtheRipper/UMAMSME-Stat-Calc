@@ -47,10 +47,16 @@ def race_action(gui):
                     gui.log(f"⚠️ Could not delete saved state: {e}")
             offer_post_run_save(gui)
             return
+    gui.turns_left -= 1
+    gui.turn += 1
+    if hasattr(gui, 'update_rounds_turns_fields'):
+        gui.update_rounds_turns_fields()
     prepare_next_turn(gui)
 
 def advance_turn(gui):
     gui.turns_left -= 1
+    if hasattr(gui, 'update_rounds_turns_fields'):
+        gui.update_rounds_turns_fields()
     if gui.turns_left < 1:
         handle_race_stage(gui)
     else:
@@ -64,6 +70,11 @@ def handle_race_stage(gui):
         fb, ok = QInputDialog.getText(gui, "Feedback", "Focus stat (leave blank):")
         gui.feedback_stat = fb.lower() if ok and fb.lower() in STATS else None
         gui.rounds_done += 1
+        # Decrement preliminary races (total_rounds) if still in prelims
+        if gui.rounds_done <= gui.total_rounds:
+            gui.total_rounds -= 1
+            if hasattr(gui, 'update_rounds_turns_fields'):
+                gui.update_rounds_turns_fields()
         next_stage = race_stage(gui.rounds_done, gui.total_rounds)
         if next_stage == "End":
             QMessageBox.information(gui, "Done", "🏆 Final complete!")
@@ -101,6 +112,8 @@ def prepare_next_turn(gui):
     for s in STATS:
         gui.detected_inputs[s].clear()
         gui.detected_inputs[s].setEnabled(False)
+    if hasattr(gui, 'update_rounds_turns_fields'):
+        gui.update_rounds_turns_fields()
     gui.log(f"🔄 Ready for turn {gui.turn}  •  {gui.turns_left} turns left until next race")
 
 def offer_post_run_save(gui):
