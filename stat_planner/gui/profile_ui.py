@@ -1,9 +1,50 @@
+
 from PyQt6.QtWidgets import QDialog, QFormLayout, QLineEdit, QPushButton, QFileDialog, QDialogButtonBox, QMessageBox
 from PyQt6.QtGui import QIntValidator, QPixmap
 from PyQt6.QtCore import Qt
 from pathlib import Path
 from stat_planner.settings import STATS, PHOTOS_DIR
-from stat_planner.profiles import add_profile
+from stat_planner.profiles import add_profile, load_profiles, save_profiles
+
+def show_edit_profile_dialog(gui):
+    idx = gui.profile_select.currentIndex() - 1
+    if idx < 0:
+        QMessageBox.information(gui, "Edit Profile", "Select a trainee to edit.")
+        return
+    profiles = load_profiles()
+    profile = profiles[idx]
+    dlg = QDialog(gui)
+    dlg.setWindowTitle(f"Edit Trainee: {profile['name']}")
+    form = QFormLayout(dlg)
+
+    # Show name (read-only)
+    name_edit = QLineEdit(profile['name']); name_edit.setReadOnly(True)
+    form.addRow("Name:", name_edit)
+
+    # Show analytics info
+    analytics = profile.get('analytics', {})
+    loss_reasons = analytics.get('loss_reasons', {})
+    loss_str = ", ".join(f"{k.capitalize()}: {v}" for k,v in loss_reasons.items()) or "None"
+    loss_lbl = QLineEdit(loss_str); loss_lbl.setReadOnly(True)
+    form.addRow("Loss Reasons:", loss_lbl)
+
+    clear_btn = QPushButton("Clear Analytics (Loss Reasons & Action Stats)")
+    def clear_analytics():
+        if QMessageBox.question(gui, "Confirm", "Clear all analytics for this profile?") == QMessageBox.StandardButton.Yes:
+            profiles[idx]['analytics'] = {}
+            save_profiles(profiles)
+            # Reload profiles and reselect current trainee to update UI
+            gui.profiles = load_profiles()
+            gui.profile_select.setCurrentIndex(idx + 1)  # +1 for the 'Select Trainee' entry
+            QMessageBox.information(gui, "Cleared", "Analytics cleared.")
+            dlg.accept()
+    clear_btn.clicked.connect(clear_analytics)
+    form.addRow(clear_btn)
+
+    buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+    buttons.rejected.connect(dlg.reject)
+    form.addRow(buttons)
+    dlg.exec()
 
 def on_profile_selected(gui, idx):
     if idx <= 0:
@@ -21,6 +62,11 @@ def on_profile_selected(gui, idx):
         gui.photo_lbl.clear()
 
 def show_add_profile_dialog(gui):
+    # Add Edit Profile button to main GUI if not already present
+    if not hasattr(gui, 'edit_profile_btn'):
+        gui.edit_profile_btn = QPushButton("Edit Trainee…")
+        gui.edit_profile_btn.clicked.connect(lambda: show_edit_profile_dialog(gui))
+        gui.main_layout.insertWidget(1, gui.edit_profile_btn)
     dlg = QDialog(gui)
     dlg.setWindowTitle("Add New Trainee")
     form = QFormLayout(dlg)

@@ -6,9 +6,22 @@ from stat_planner.state import STATE_FILE
 from stat_planner.exporter import export_run_summary
 
 def train_action(gui):
-    choice, reason = suggest_training(gui.current_stats, gui.ideal_stats, gui.turns_left, gui.feedback_stat)
+    choice, reason, debug_weights = suggest_training(gui.current_stats, gui.ideal_stats, gui.turns_left, gui.feedback_stat)
     gui.last_action = choice
     gui.log(f"📌 Train {choice.capitalize()} — {reason}")
+    # Show calculation breakdown for user clarity
+    lines = ["Calculation details:"]
+    lines.append("Gaps (current / ideal - 1.0):")
+    for s in gui.current_stats:
+        gap = gui.current_stats[s] / gui.ideal_stats[s] - 1.0 if gui.ideal_stats[s] else 0.0
+        lines.append(f"  {s.capitalize()}: {gap:+.3f}")
+    if debug_weights:
+        lines.append("Weights used:")
+        for s, w in debug_weights.items():
+            lines.append(f"  {s.capitalize()}: {w:.2f}")
+    lines.append("")
+    lines.append("Each stat's score = weight × (gap²). The stat with the lowest total score is suggested.")
+    gui.log("\n".join(lines))
     advance_turn(gui)
 
 def recover_action(gui):
@@ -37,6 +50,22 @@ def race_action(gui):
                 gui.feedback_stat = stat.lower()
                 gui.log(f"💡 Optional race feedback → prioritize {stat.capitalize()}")
         else:
+            # Mandatory race loss: ask for stat reason and save to profile analytics
+            stat, ok2 = QInputDialog.getText(
+                gui, "Loss Reason",
+                "Which stat caused the loss? (leave blank if none):"
+            )
+            if ok2 and stat.lower() in STATS:
+                idx = gui.profile_select.currentIndex()-1 if gui.profile_select.currentIndex()>0 else None
+                if idx is not None:
+                    from stat_planner.profiles import load_profiles, save_profiles
+                    profiles = load_profiles()
+                    profile = profiles[idx]
+                    analytics = profile.setdefault("analytics", {})
+                    loss_reasons = analytics.setdefault("loss_reasons", {})
+                    loss_reasons[stat.lower()] = loss_reasons.get(stat.lower(), 0) + 1
+                    save_profiles(profiles)
+                    gui.log(f"📈 Recorded loss reason: {stat.capitalize()} for {profile['name']}")
             gui.log("❌ Mandatory race lost—run over.")
             if STATE_FILE.exists():
                 try:
@@ -94,6 +123,22 @@ def handle_race_stage(gui):
             gui.turn = 1
             prepare_next_turn(gui)
     else:
+        # Prompt for loss reason and save to analytics
+        stat, ok2 = QInputDialog.getText(
+            gui, "Loss Reason",
+            "Which stat caused the loss? (leave blank if none):"
+        )
+        if ok2 and stat.lower() in STATS:
+            idx = gui.profile_select.currentIndex()-1 if gui.profile_select.currentIndex()>0 else None
+            if idx is not None:
+                from stat_planner.profiles import load_profiles, save_profiles
+                profiles = load_profiles()
+                profile = profiles[idx]
+                analytics = profile.setdefault("analytics", {})
+                loss_reasons = analytics.setdefault("loss_reasons", {})
+                loss_reasons[stat.lower()] = loss_reasons.get(stat.lower(), 0) + 1
+                save_profiles(profiles)
+                gui.log(f"📈 Recorded loss reason: {stat.capitalize()} for {profile['name']}")
         QMessageBox.information(gui, "Run Over", "❌ Run ended.")
         if STATE_FILE.exists():
             try:
