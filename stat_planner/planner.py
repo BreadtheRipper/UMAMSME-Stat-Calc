@@ -1,66 +1,99 @@
-from .settings import STATS, FEEDBACK_WEIGHT, PRIORITY_WEIGHTS, PRIORITY_WEIGHT_SCALE
+from .settings import (
+    STATS, FEEDBACK_WEIGHT, PRIORITY_WEIGHTS,
+    PRIORITY_WEIGHT_SCALE, LOSS_REASON_WEIGHT,
+    CATCHUP_THRESHOLD, CATCHUP_BOOST,
+    OVERSHOOT_THRESHOLD, OVERSHOOT_PENALTY_SCALE
+)
 import math
-from .settings import STATS, FEEDBACK_WEIGHT
 from .profiles import load_profiles
 
 def suggest_training(current, ideal, turns, feedback=None, profile_index=None, priorities=None, loss_reason_weight=None):
+    """
+    Suggests which stat to train next based on gap-to-ideal and weighting factors.
 
-    # Debug output removed for production use
+    Parameters:
+        current (dict): Current stats {stat_name: value}.
+        ideal (dict): Ideal target stats {stat_name: value}.
+        turns (int): Remaining turns (not directly used here).
+        feedback (str): Last feedback stat (optional).
+        profile_index (int): Index of profile to load loss reasons from (optional).
+        priorities (dict): User-defined priorities for each stat.
+        loss_reason_weight (float): Multiplier for loss reason boost.
 
-    # Build per‐action average gain vectors
-    avg_gains = {}
+    Returns:
+        tuple: (best_stat, reason_string, debug_weights)
+    """
     loss_reasons = None
+
+    # Load profile analytics if available
     if profile_index is not None:
         analytics = load_profiles()[profile_index].get("analytics", {})
-        astats = analytics.get("action_stats", {})
         loss_reasons = analytics.get("loss_reasons", {})
-        for action, data in astats.items():
-            cnt = data.get("count", 0) or 1
-            avg_gains[action] = {s: data["gains"].get(s, 0) / cnt for s in STATS}
-    # Fallback to 1‑point primary gain
-    for a in STATS:
-        avg_gains.setdefault(a, {s: (1 if s == a else 0) for s in STATS})
 
-    # Use PRIORITY_WEIGHTS and PRIORITY_WEIGHT_SCALE from settings
-    best, best_score = None, float("inf")
+    best_stat, best_score = None, float("-inf")
     debug_weights = {}
-    for action, gains in avg_gains.items():
-        total = 0.0
-        weights = {}
-        for s in STATS:
-            new_val = current[s] + gains[s]
-            gap = new_val / ideal[s] - 1.0
-            # weight feedback stat, user priority, and loss reasons
-            user_weight = 1.0
-            # Case-insensitive stat name matching for priorities
-            if priorities:
-                for key in priorities:
-                    if key.lower() == s.lower():
-                        user_weight = PRIORITY_WEIGHTS.get(priorities[key], 1.0) * PRIORITY_WEIGHT_SCALE
-                        break
-            loss_weight = 0.0
-            if loss_reasons:
-                for key in loss_reasons:
-                    if key.lower() == s.lower():
-                        if loss_reason_weight is None:
-                            from .settings import LOSS_REASON_WEIGHT
-                            loss_reason_weight = LOSS_REASON_WEIGHT
-                        loss_weight = loss_reason_weight * loss_reasons[key]
-                        break
-            w = user_weight + (FEEDBACK_WEIGHT if feedback == s else 0.0) + loss_weight
-            weights[s] = w
-            total += w * (gap * gap)
-        score = math.sqrt(total)
-        if score < best_score:
-            best_score, best = score, action
-            debug_weights = weights
 
-    reason = f"Minimizes overall deviation (priorities, feedback, and loss history considered, {best_score:.2f})"
-    return best, reason, debug_weights
+    print("[DEBUG] Suggestion calculations:")
+    for stat in STATS:
+        progress = current[stat] / ideal[stat]
+        gap = 1.0 - progress  # Larger gap = further behind
+        user_weight = 1.0
+        note_parts = []
+
+        # Priority weight
+        priority = priorities.get(stat, "Normal") if priorities else "Normal"
+        priority_weight = PRIORITY_WEIGHTS.get(priority, 1.0) * PRIORITY_WEIGHT_SCALE
+        user_weight *= priority_weight
+        note_parts.append(f"Priority: {priority}")
+
+        # Catch-up boost
+        if progress < CATCHUP_THRESHOLD:
+            user_weight *= CATCHUP_BOOST
+            note_parts.append("Catch-up boost")
+
+        # Overshoot penalty
+        if progress > OVERSHOOT_THRESHOLD:
+            overshoot_ratio = progress / OVERSHOOT_THRESHOLD
+            penalty = 1.0 + OVERSHOOT_PENALTY_SCALE * (overshoot_ratio - 1.0)
+            user_weight /= penalty
+            note_parts.append(f"Overshoot {penalty:.2f}x")
+
+        # Feedback weight
+        if feedback == stat:
+            user_weight += FEEDBACK_WEIGHT
+            note_parts.append("Feedback boost")
+
+        # Loss reason weight
+        if loss_reasons and stat in loss_reasons:
+            lw = loss_reason_weight if loss_reason_weight is not None else LOSS_REASON_WEIGHT
+            boost = lw * loss_reasons[stat]
+            user_weight += boost
+            note_parts.append("Loss reason boost")
+
+        # Final score for this stat
+        weighted_gap = gap * user_weight
+        debug_weights[stat] = (user_weight, weighted_gap, "; ".join(note_parts))
+
+        print(f"  {stat.capitalize():8}: Gap Δ {weighted_gap:.3f} (Weight: {user_weight:.2f}, {', '.join(note_parts)})")
+
+        # Select if best
+        if weighted_gap > best_score:
+            best_score = weighted_gap
+            best_stat = stat
+
+    print(f"Selected: {best_stat.capitalize()} with total score {best_score:.3f}\n")
+
+    reason = (
+        f"Maximizes reduction of weighted stat gaps (priorities, feedback, "
+        f"loss history, catch-up, overshoot considered, {best_score:.2f})"
+    )
+    return best_stat, reason, debug_weights
+
+
 
 def race_stage(rounds_done, total_rounds):
     if rounds_done < total_rounds:
-        return f"Round {rounds_done+1}"
+        return f"Round {rounds_done + 1}"
     stages = ["Quarter-Final", "Semi-Final", "Final"]
     idx = rounds_done - total_rounds
     return stages[idx] if idx < len(stages) else "End"

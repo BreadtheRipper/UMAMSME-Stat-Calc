@@ -1,7 +1,6 @@
 import cv2
 import numpy as np
-from PIL import ImageGrab
-import pytesseract
+from .utils.screenshot import grab_game_screen  # adjust path as needed
 from .settings import STATS, MATCH_THRESHOLD, DIGIT_MATCH_THRESHOLD
 from .assets import load_templates, load_digit_templates
 
@@ -30,7 +29,7 @@ def match_digits(region, debug=False, stat_name=""):
     return int(number) if number.isdigit() and int(number) <= 1200 else None
 
 def auto_read_stats(debug=False):
-    screen = ImageGrab.grab()
+    screen = grab_game_screen()
     img = cv2.cvtColor(np.array(screen), cv2.COLOR_RGB2BGR)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     gray = cv2.equalizeHist(gray)

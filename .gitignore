@@ -71,3 +71,6 @@ Thumbs.db
 stat_graph.png
 run_summary.pptx
 stat_history.csv
+profiles.json
+run_state.json
+stat_planner/assets/profiles/

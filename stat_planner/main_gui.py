@@ -18,7 +18,7 @@ import json
 from .exporter import export_run_summary
 from .state import STATE_FILE
 
-from .settings   import STATS, ICON_PATH, PHOTOS_DIR
+from .settings   import STATS, ICON_PATH, PHOTOS_DIR, PRIORITY_WEIGHTS
 from .assets     import load_stat_icons
 from .ocr        import auto_read_stats
 from .planner    import suggest_training, race_stage
@@ -366,18 +366,23 @@ class StatPlannerGUI(QWidget):
             self.turns_left,
             self.feedback_stat,
             priorities=self.stat_priorities,
-            profile_index=self.profile_select.currentIndex()-1 if self.profile_select.currentIndex()>0 else None,
+            profile_index=self.profile_select.currentIndex() - 1 if self.profile_select.currentIndex() > 0 else None,
             loss_reason_weight=loss_reason_weight
         )
         self.last_action = choice
-        # Refined display: weights in a table-like format
+
+        # Start log message
         self.log(f"📌 Train {choice.capitalize()} — {reason}")
-        lines = ["<b>Weights used:</b>", "<pre>  Stat      Weight"]
-        for s, w in debug_weights.items():
-            lines.append(f"  {s.capitalize():8} {w:6.2f}")
+
+        # Build weights table with annotations and gap deltas
+        lines = ["<b>Weights used (with modifiers):</b>", "<pre>  Stat      Weight   W.Gap   Notes"]
+        for s, (w, weighted_gap, notes) in debug_weights.items():
+            lines.append(f"  {s.capitalize():8} {w:6.2f}   {weighted_gap:6.3f}   {notes or '—'}")
         lines.append("</pre>")
+
         self.log("\n".join(lines))
         self.advance_turn()
+
 
     def recover_action(self):
         self.log("💤 Recovery turn")
@@ -502,5 +507,3 @@ class StatPlannerGUI(QWidget):
             photo = str(Path(PHOTOS_DIR) / self.profiles[idx-1]["photo"]) if self.profiles[idx-1].get("photo") else None
         export_run_summary(self.history, self.ideal_stats, trainee, photo)
         QMessageBox.information(self, "Export Complete", "run_summary.pptx created!")
-    
-    # --- State Handlers moved to state_ui.py ---
